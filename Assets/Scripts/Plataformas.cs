@@ -15,7 +15,7 @@ public class Plataformas : MonoBehaviour
 
     void MovePlatform()
     {
-        if(Vector3.Distance(transform.position, nodos[waypointIndex].transform.position) < 0.1f) //esto compara la distancia entre la plataforma y el punto al que se dirije. Si detecta que ya llegó, va al otro nodo. Es como cuando ordenaba variables con metodo de cascada en C++
+        if(Vector3.Distance(transform.position, nodos[waypointIndex].transform.position) < 0.1f)
         {
             waypointIndex++;
             if(waypointIndex >= nodos.Length)

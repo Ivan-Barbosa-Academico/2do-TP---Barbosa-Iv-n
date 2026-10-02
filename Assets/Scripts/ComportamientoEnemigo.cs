@@ -16,14 +16,14 @@ public class ComportamientoEnemigo : MonoBehaviour
     public string tagJugador = "Player";
 
     [Header("Zona de detección (esfera)")]
-    public float radioAlerta = 6f;       // radio de la esfera de segunda detección
+    public float radioAlerta = 6f;
 
     [Header("Dinámica de detección progresiva")]
-    public float tasaIncremento = 0.6f;  // cuánto sube la barra de detección por segundo cuando hay visibilidad
-    public float tasaIncrementoCercania = 1.0f; // multiplicador si está dentro de la esfera
-    public float tasaDecrecimiento = 0.4f; // cuánto decrece por segundo cuando no hay contacto
-    [Range(0f, 1f)] public float umbralAlerta = 0.25f;   // a partir de aquí -> estado Alerta
-    [Range(0f, 1f)] public float umbralDeteccion = 1f;   // detección completa (perdiste)
+    public float tasaIncremento = 0.6f;
+    public float tasaIncrementoCercania = 1.0f;
+    public float tasaDecrecimiento = 0.4f;
+    [Range(0f, 1f)] public float umbralAlerta = 0.25f;
+    [Range(0f, 1f)] public float umbralDeteccion = 1f;
 
     [Header("Movimiento en persecución")]
     public float velocidadPersecucion = 4f;
@@ -37,28 +37,30 @@ public class ComportamientoEnemigo : MonoBehaviour
     [Header("Audio")]
     public AudioClip sonidoAlerta;
     public AudioClip sonidoPersecucion;
-    public AudioClip sonidoFinAlerta; // Sonido al volver de Alerta -> Patrulla
+    public AudioClip sonidoFinAlerta;
     [Range(0f, 1f)] public float volumenSonido = 1f;
 
     [Header("Feedback visual")]
-    public bool crearBarraRuntime = true; // activar/desactivar barra en tiempo de ejecución
-    public float offsetAlturaBarra = 1.2f; // altura relativa sobre la cabeza
-    public float anchoBarra = 1.6f; // ancho total de la barra completa
+    public bool crearBarraRuntime = true;
+    public float offsetAlturaBarra = 1.2f;
+    public float anchoBarra = 1.6f;
+    public bool mostrarBarraSiempre = true;
 
     // Estado interno
     private Estado estadoActual = Estado.Patrulla;
     private Estado estadoPrevio = Estado.Patrulla;
     private int indicePunto = 0;
     private float contadorEspera = 0f;
-    private float progresoDeteccion = 0f; // 0..1
+    private float progresoDeteccion = 0f;
     private Transform jugadorTransform;
     private Renderer rend;
     private AudioSource fuenteAudio;
     private bool yaPerdido = false;
-
-    // Barra runtime
     private GameObject barraVisual;
     private Material matBarra;
+    private bool deteccionSuprimida = false;
+    private float cachedRadioAlerta;
+    private float cachedTasaIncrementoCercania;
 
     void Start()
     {
@@ -79,11 +81,53 @@ public class ComportamientoEnemigo : MonoBehaviour
         {
             CrearBarraRuntime();
         }
+        InvPotion.OnInvisibilityStateChanged += HandleInvisibilityStateChanged;
+    }
+
+    private void OnDestroy()
+    {
+        if (matBarra != null)
+        {
+            Destroy(matBarra);
+        }
+        if (barraVisual != null)
+        {
+            Destroy(barraVisual);
+        }
+        InvPotion.OnInvisibilityStateChanged -= HandleInvisibilityStateChanged;
+    }
+    private void HandleInvisibilityStateChanged(GameObject player, bool active)
+    {
+        if (jugadorTransform == null) return;
+        if (player != jugadorTransform.gameObject) return;
+
+        if (active)
+        {
+            if (!deteccionSuprimida)
+            {
+                cachedRadioAlerta = radioAlerta;
+                cachedTasaIncrementoCercania = tasaIncrementoCercania;
+
+                radioAlerta = 0f;
+                tasaIncrementoCercania = 0f;
+
+                deteccionSuprimida = true;
+            }
+        }
+        else
+        {
+            if (deteccionSuprimida)
+            {
+                radioAlerta = cachedRadioAlerta;
+                tasaIncrementoCercania = cachedTasaIncrementoCercania;
+
+                deteccionSuprimida = false;
+            }
+        }
     }
 
     void Update()
     {
-        // Actualizar detección progresiva
         bool visiblePorRaycast = false;
         bool dentroEsfera = false;
 
@@ -93,40 +137,32 @@ public class ComportamientoEnemigo : MonoBehaviour
             Vector3 dirJugador = (jugadorTransform.position - origen).normalized;
             float distanciaJugador = Vector3.Distance(origen, jugadorTransform.position);
 
-            // Comprueba ángulo de visión
             float angulo = Vector3.Angle(transform.forward, dirJugador);
             if (angulo <= anguloVision * 0.5f && distanciaJugador <= distanciaVision)
             {
-                // Comprobar línea de visión: raycast que evalúa el primer hit
                 RaycastHit hit;
                 if (Physics.Raycast(origen, dirJugador, out hit, distanciaJugador))
                 {
-                    // Si el primer collider alcanzado es el jugador -> visible
                     if (hit.collider.CompareTag(tagJugador))
                     {
                         visiblePorRaycast = true;
                     }
                     else
                     {
-                        // Golpeó algo antes que el jugador => obstáculo que bloquea la visión
                         visiblePorRaycast = false;
                     }
                 }
                 else
                 {
-                    // No golpeó nada dentro de la distancia de visión → considerar no visible (o visible según tu lógica)
                     visiblePorRaycast = false;
                 }
             }
-
-            // Comprobar esfera de proximidad (segunda zona)
             if (Vector3.Distance(transform.position, jugadorTransform.position) <= radioAlerta)
             {
                 dentroEsfera = true;
             }
         }
 
-        // Ajuste progresivo
         float incremento = 0f;
         if (visiblePorRaycast)
         {
@@ -135,19 +171,16 @@ public class ComportamientoEnemigo : MonoBehaviour
         }
         else if (dentroEsfera)
         {
-            // Si no hay línea de visión pero está dentro de la esfera, subir ligeramente
             incremento += (tasaIncremento * 0.4f) * Time.deltaTime;
         }
         else
         {
-            // Decrementar si no detecta
             progresoDeteccion -= tasaDecrecimiento * Time.deltaTime;
         }
 
         progresoDeteccion += incremento;
         progresoDeteccion = Mathf.Clamp01(progresoDeteccion);
 
-        // Estado según progreso
         if (progresoDeteccion >= umbralDeteccion)
         {
             estadoActual = Estado.Persecucion;
@@ -168,14 +201,12 @@ public class ComportamientoEnemigo : MonoBehaviour
             yaPerdido = false;
         }
 
-        // Detectar cambio de estado para emitir sonido
         if (estadoActual != estadoPrevio)
         {
             OnEstadoCambiado(estadoPrevio, estadoActual);
             estadoPrevio = estadoActual;
         }
 
-        // Visual feedback (color)
         if (rend != null)
         {
             switch (estadoActual)
@@ -186,32 +217,25 @@ public class ComportamientoEnemigo : MonoBehaviour
             }
         }
 
-        // Actualizar barra runtime si existe
         if (barraVisual != null && matBarra != null)
         {
-            // Color según progreso (verde->rojo)
             matBarra.color = Color.Lerp(colorPatrulla, colorPersecucion, progresoDeteccion);
 
-            // Escala X proporcional al progreso
             float currentWidth = anchoBarra * progresoDeteccion;
-            currentWidth = Mathf.Max(0.01f, currentWidth); // evitar escala cero absoluta
+            currentWidth = Mathf.Max(0.01f, currentWidth);
             barraVisual.transform.localScale = new Vector3(currentWidth, 0.12f, 1f);
 
-            // Alinear izquierda: centro = -ancho/2 + currentWidth/2
             float centerX = -anchoBarra * 0.5f + currentWidth * 0.5f;
             barraVisual.transform.localPosition = new Vector3(centerX, alturaOjos + offsetAlturaBarra, 0f);
 
-            // Billboard hacia cámara principal (si existe)
             if (Camera.main != null)
             {
                 barraVisual.transform.rotation = Quaternion.LookRotation(barraVisual.transform.position - Camera.main.transform.position);
             }
 
-            // Opcional: ocultar cuando 0
             barraVisual.SetActive(progresoDeteccion > 0.001f);
         }
 
-        // Lógica de comportamiento según estado
         switch (estadoActual)
         {
             case Estado.Patrulla:
@@ -232,7 +256,6 @@ public class ComportamientoEnemigo : MonoBehaviour
 
         fuenteAudio.volume = volumenSonido;
 
-        // Reproducción específica para la transición Alerta -> Patrulla
         if (anterior == Estado.Alerta && actual == Estado.Patrulla)
         {
             if (sonidoFinAlerta != null)
@@ -243,13 +266,11 @@ public class ComportamientoEnemigo : MonoBehaviour
             }
             else
             {
-                // Si no hay clip asignado, detener audio por si quedaba algo sonando
                 fuenteAudio.Stop();
             }
             return;
         }
 
-        // Comportamiento por estado de llegada
         switch (actual)
         {
             case Estado.Alerta:
@@ -286,7 +307,6 @@ public class ComportamientoEnemigo : MonoBehaviour
 
         if (distancia < 0.2f)
         {
-            // Llegó al punto
             contadorEspera += Time.deltaTime;
             if (contadorEspera >= esperaEnPunto)
             {
@@ -296,20 +316,17 @@ public class ComportamientoEnemigo : MonoBehaviour
             return;
         }
 
-        // Rotación suave hacia objetivo
         if (dirPlano != Vector3.zero)
         {
             Quaternion rotDeseada = Quaternion.LookRotation(dirPlano);
             transform.rotation = Quaternion.Slerp(transform.rotation, rotDeseada, Time.deltaTime * 4f);
         }
 
-        // Movimiento hacia el punto
         transform.position += transform.forward * velocidadPatrulla * Time.deltaTime;
     }
 
     void EjecutarAlerta()
     {
-        // Comportamiento simple de alerta: mirar hacia el jugador si lo conoce, pero no perseguir fuertemente.
         if (jugadorTransform != null)
         {
             Vector3 direccion = jugadorTransform.position - transform.position;
@@ -321,7 +338,6 @@ public class ComportamientoEnemigo : MonoBehaviour
             }
         }
 
-        // Pequeño movimiento de aproximación lento si está dentro de la esfera
         if (jugadorTransform != null && Vector3.Distance(transform.position, jugadorTransform.position) <= radioAlerta)
         {
             transform.position = Vector3.MoveTowards(transform.position, jugadorTransform.position, velocidadPatrulla * 0.6f * Time.deltaTime);
@@ -332,7 +348,6 @@ public class ComportamientoEnemigo : MonoBehaviour
     {
         if (jugadorTransform == null) return;
 
-        // Mirar al jugador y moverse rápido hacia él
         Vector3 direccion = jugadorTransform.position - transform.position;
         direccion.y = 0;
         if (direccion != Vector3.zero)
@@ -346,11 +361,8 @@ public class ComportamientoEnemigo : MonoBehaviour
 
     void OnDrawGizmosSelected()
     {
-        // Dibuja esfera de detección
         Gizmos.color = new Color(1f, 0.6f, 0f, 0.2f);
         Gizmos.DrawSphere(transform.position, radioAlerta);
-
-        // Dibuja campo de visión (aproximado con líneas)
         Gizmos.color = Color.cyan;
         Vector3 origen = transform.position + Vector3.up * alturaOjos;
         float halfAngle = anguloVision * 0.5f;
@@ -358,8 +370,6 @@ public class ComportamientoEnemigo : MonoBehaviour
         Vector3 dirDer = Quaternion.Euler(0, halfAngle, 0) * transform.forward;
         Gizmos.DrawLine(origen, origen + dirIzq.normalized * distanciaVision);
         Gizmos.DrawLine(origen, origen + dirDer.normalized * distanciaVision);
-
-        // Barra de progreso de detección (visualmente en escena, encima del enemigo)
         Vector3 barraBase = transform.position + Vector3.up * (alturaOjos + 1.2f);
         Vector3 dir = Vector3.right * 0.75f;
         Gizmos.color = Color.black;
@@ -368,38 +378,29 @@ public class ComportamientoEnemigo : MonoBehaviour
         Gizmos.DrawCube(barraBase - dir * 0.8f + Vector3.right * progresoDeteccion * 1.6f, new Vector3(progresoDeteccion * 1.6f, 0.1f, 0.01f));
     }
 
-    // --- Métodos auxiliares para la barra runtime ---
     private void CrearBarraRuntime()
     {
-        // Crear quad simple como barra
         barraVisual = GameObject.CreatePrimitive(PrimitiveType.Quad);
         barraVisual.name = $"{name}_BarraDeteccion";
         barraVisual.transform.SetParent(transform, false);
 
-        // Quitar collider
-        Collider col = barraVisual.GetComponent<Collider>();
-        if (col != null) Destroy(col);
+        var meshCol = barraVisual.GetComponent<MeshCollider>();
+        if (meshCol != null)
+        {
+            DestroyImmediate(meshCol);
+        }
+        else
+        {
+            Collider col = barraVisual.GetComponent<Collider>();
+            if (col != null) DestroyImmediate(col);
+        }
 
-        // Material sencillo (no afectado por iluminación)
         matBarra = new Material(Shader.Find("Unlit/Color"));
         matBarra.color = Color.green;
         var rendBarra = barraVisual.GetComponent<Renderer>();
         if (rendBarra != null) rendBarra.sharedMaterial = matBarra;
 
-        // Ajuste inicial: ancho mínimo
         barraVisual.transform.localScale = new Vector3(0.01f, 0.12f, 1f);
         barraVisual.transform.localPosition = new Vector3(-anchoBarra * 0.5f, alturaOjos + offsetAlturaBarra, 0f);
-    }
-
-    private void OnDestroy()
-    {
-        if (matBarra != null)
-        {
-            Destroy(matBarra);
-        }
-        if (barraVisual != null)
-        {
-            Destroy(barraVisual);
-        }
     }
 }

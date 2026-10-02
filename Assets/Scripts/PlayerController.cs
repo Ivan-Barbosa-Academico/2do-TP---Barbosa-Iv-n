@@ -9,10 +9,8 @@ public class PlayerController : MonoBehaviour
     public Vector2 mouseSensitivity;
     public new Transform camera;
 
-    // Rotación por físicas
     public float rotationSpeed = 10f;
 
-    // Acumulador de pitch para la cámara
     private float cameraPitch = 0f;
 
     void Start()
@@ -33,10 +31,8 @@ public class PlayerController : MonoBehaviour
         Updatemouselook();
     }
 
-    // FixedUpdate para aplicar rotaciones/velocidades relacionadas con físicas
     void FixedUpdate()
     {
-        // Alinear el Rigidbody con la orientación horizontal de la cámara
         if (camera == null || rb == null) return;
 
         Vector3 flatForward = new(camera.forward.x, 0f, camera.forward.z);
@@ -73,7 +69,7 @@ public class PlayerController : MonoBehaviour
             Vector3 direction = (transform.forward * move.y + transform.right * move.x).normalized;
             velocity = direction * speed;
         }
-        velocity.y = rb.linearVelocity.y; // Para mantener la velocidad vertical.
+        velocity.y = rb.linearVelocity.y;
         rb.linearVelocity = velocity;
     }
 
@@ -90,11 +86,9 @@ public class PlayerController : MonoBehaviour
             mouseDelta = Gamepad.current.rightStick.ReadValue() * 10f;
         }
 
-        // NO multiplicar por Time.deltaTime para el delta del ratón
         float hor = mouseDelta.x * mouseSensitivity.x;
         float ver = mouseDelta.y * mouseSensitivity.y;
 
-        // Rotar la cámara en yaw (Space.World para que rote en torno al up global)
         if (hor != 0f)
         {
             camera.Rotate(Vector3.up, hor, Space.World);
